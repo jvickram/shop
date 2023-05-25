@@ -1,7 +1,7 @@
 const Mongoose = require("mongoose");
 const Schema = Mongoose.Schema;
 
-const addressSchema = new Schema(
+const AddressSchema = new Schema(
   {
     user: {
       type: Schema.Types.ObjectId,
@@ -31,4 +31,4 @@ const addressSchema = new Schema(
   { timestamps: true }
 );
 
-module.exports = Mongoose.model("address", addressSchema);
+module.exports = Mongoose.model("address", AddressSchema);
