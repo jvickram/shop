@@ -2,10 +2,11 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const AppError = require("../Utils/AppError");
 const GenericValidation = require("../Utils/GenericValidation");
-const { createSecretToken } = require("../Utils/SecretToken");
+const { createJwtSecretToken } = require("../Utils/SecretToken");
 const bcrypt = require("bcrypt");
 const UserService = require("../Services/User");
 const To = require("../Utils/To");
+const Common = require("../Utils/Common");
 
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
@@ -17,7 +18,6 @@ const UserVerification = (req, res) => {
     }
 
     jwt.verify(token, process.env.TOKEN_KEY, async (err, data) => {
-      console.log("Token ", token);
       if (err) {
         return res.json({ status: false });
       } else {
@@ -40,20 +40,20 @@ const UserVerification = (req, res) => {
   }
 };
 
-const Login = async (creds, params, flags) => {
+const Login = async (user, params, flags) => {
   try {
-    let error, result, user;
+    let error, result, existingUser;
     if (!params) params = {};
     if (!flags) flags = {};
 
-    [error, user] = await To(UserService.getOne(creds, params, flags));
+    [error, existingUser] = await To(UserService.getOne(user, params, flags));
 
     if (error) {
       throw new AppError(error.message, error.code, error.data);
     }
 
-    if (user && GenericValidation.isSuccessResponse(user)) {
-      const auth = await bcrypt.compare(password, user.password);
+    if (GenericValidation.isSuccessResponse(existingUser)) {
+      const auth = await bcrypt.compare(password, existingUser.password);
       if (!auth) {
         return Promise.resolve({
           code: 200,
@@ -61,46 +61,61 @@ const Login = async (creds, params, flags) => {
         });
       }
 
-      const token = createSecretToken(user._id);
-      result.token = token;
+      const token = createJwtSecretToken(Common.cleanUser(existingUser));
       return Promise.resolve({
         code: 200,
         message: "Successfully logged in.",
-        data: result,
+        data: token,
       });
     }
   } catch (error) {
     if (error && error.code && error.message) {
       return Promise.reject(error);
     }
-    return Promise.reject({ code: 409, message: "Error while login user" });
+    return Promise.reject({ code: 409, message: "Error while login user " + error.message });
   }
 };
 
-const Signup = async (creds, params, flags) => {
-  // try {
-  //   let error, result, user;
-  //   if (!params) params = {};
-  //   if (!flags) flags = {};
-  //   [error, user] = await To(UserService.getOne(creds, params, flags));
-  //   if (error) {
-  //     throw new AppError(error.message, error.code, error.data)
-  //   }
-  //   if (user && GenericValidation.isSuccessResponse(user)) {
-  //     const auth = await bcrypt.compare(password, user.password);
-  //     if (!auth) {
-  //       return Promise.resolve({code: 200, message: "Incorrect password or email"});
-  //     }
-  //     const token = createSecretToken(user._id);
-  //     result.token = token;
-  //     return Promise.resolve({code: 200, message: "Successfully logged in.", data: result});
-  //   }
-  // } catch (error) {
-  //   if (error && error.code && error.message) {
-  //     return Promise.resolve(error);
-  //   }
-  //   return Promise.reject({code: 409, message: "Error while login user"})
-  // }
+const Signup = async (user, params, flags) => {
+  try {
+    let error, result, existingUser;
+    if (!params) params = {};
+    if (!flags) flags = {};
+
+    // check if user exist
+    [error, existingUser] = await To(
+      UserService.getOne(user, params, flags)
+    );
+
+    if (error) {
+      throw new AppError(error.message, error.code, error.data);
+    }
+
+    if (GenericValidation.isSuccessResponse(existingUser)) {
+      return Promise.resolve({ code: 200, message: "User already exist" });
+    }
+
+    // create user
+    let newUser;
+    [error, newUser] = await To(UserService.create(user, params, flags));
+
+    if (error) {
+      throw new AppError(error.message, error.code, error.data);
+    }
+
+    // create jwt token
+    const token = createJwtSecretToken(Common.cleanUser(newUser));
+    return Promise.resolve({
+      code: 200,
+      message: "Successfully signed in.",
+      data: token,
+    });
+  } catch (error) {
+    if (error && error.code && error.message) {
+      return Promise.resolve(error);
+    }
+    return Promise.reject({ code: 409, message: "Error while signin user " + error.message });
+  }
 };
 
 module.exports = {
