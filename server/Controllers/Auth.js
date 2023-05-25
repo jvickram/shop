@@ -1,6 +1,9 @@
-const User = require("../Models/UserModel");
+const User = require("../Models/User");
 const { createSecretToken } = require("../Utils/SecretToken");
-const bcrypt = require("bcrypt");
+const GenericValidation = require("../Utils/GenericValidation");
+const AppError = require("../Utils/AppError");
+const AuthHelper = require("../Helpers/Auth");
+const To = require("../Utils/To");
 
 const Signup = async (req, res, next) => {
   try {
@@ -27,20 +30,27 @@ const Signup = async (req, res, next) => {
 
 const Login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.json({ message: "All fields are required" });
+    let error, result;
+
+    if (!GenericValidation.isNonEmptyObject(req.body)) {
+      throw new AppError("Please enter valid data.", 400, null);
     }
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.json({ message: "Incorrect password or email" });
+    if (!GenericValidation.isValidEmail(req.body.email)) {
+      throw new AppError("Please enter valid email.", 400, null);
     }
-    const auth = await bcrypt.compare(password, user.password);
-    if (!auth) {
-      return res.json({ message: "Incorrect password or email" });
+    if (!GenericValidation.isValidPassword(req.body.password)) {
+      throw new AppError("Please enter valid password.", 400, null);
     }
-    const token = createSecretToken(user._id);
-    res.cookie("token", token, {
+
+    [error, result] = await To(
+      AuthHelper.Login(req.body, req.params, req.flags)
+    );
+
+    if (error) {
+      throw new AppError(error);
+    }
+
+    res.cookie("token", result.token, {
       withCredentials: true,
       httpOnly: false,
     });
@@ -49,7 +59,10 @@ const Login = async (req, res, next) => {
       .json({ message: "User logged in successfully", success: true });
     next();
   } catch (error) {
+    // Common.terminateProcess();
     console.error(error);
+    res.status(201).json({ message: error.message, success: false });
+    next();
   }
 };
 
